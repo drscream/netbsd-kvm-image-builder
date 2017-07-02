@@ -37,7 +37,7 @@ Usage:
   $0 -r <RELEASE> -m <MIRROR> -p <MIRROR_PATH> -i <ISO> -c <ISO_CHECKSUM> -d <ISO_DIR> -M <ISO_MOUNT> -l <ISO_LAYOUT> -f <ISO_FILENAME>
 
 Example:
-  $0 -r 7.1 -m cdn.netbsd.org -p /pub/NetBSD/iso -i NetBSD-7.1-amd64.iso -c SHA512 -d /data/netbsd-7.1-iso -M /mnt/netbsd-7.1-iso -l /data/netbsd-custom-7.1 -f netbsd-6.1-custom.iso
+  $0 -r 7.1 -m cdn.netbsd.org -p /pub/NetBSD/iso -i NetBSD-7.1-amd64.iso -c SHA512 -d /data/netbsd-7.1-iso -M /mnt/netbsd-7.1-iso -l /data/netbsd-custom-7.1 -f netbsd-7.1-custom.iso
 
 OPTIONS:
   -r The desired NetBSD release (e.g., 6.1)
