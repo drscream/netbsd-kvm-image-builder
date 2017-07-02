@@ -1,19 +1,19 @@
-# openbsd-kvm-image-builder
+# netbsd-kvm-image-builder
 
 **WARNING**: This is a work in progress and is more than likely not fully functional.
 
-This repo creates a custom OpenBSD install ISO and a KVM image for use in SmartOS and Triton.
+This repo creates a custom netbsd install ISO and a KVM image for use in SmartOS and Triton.
 
 ## Requirements
 
-This must be run on a OpenBSD machine or VirtualMachine.
+This must be run on a netbsd machine or VirtualMachine.
 
 ## Setup
 
 The following packages are required:
 
 ```
-pkg_add bash cdrtools git rsync 
+pkgin in digest bash cdrtools git rsync
 ```
 
 ## Usage
@@ -29,7 +29,7 @@ see `./create-iso -h` for usage
 
 This will download an ISO, created a customized layout with installerconfig, install the Triton guesttools then build the custom ISO.
 
-To build the OpenBSD KVM image run the `create-image` script:
+To build the netbsd KVM image run the `create-image` script:
 
 ```
 ./create-image -i <ISO> -n <IMAGE_NAME> -d <DESC> -u <HOMEPAGE> -o <OWNER_UUID> -p <IP> -m NETMASK -g <GATEWAY> -v <VLAN_ID> -U <NETWORK_UUID>

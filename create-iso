@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
 # Copyright (c) 2017 Joyent Inc., All rights reserved.
+# Copyright (c) 2017 Thomas Merkel
 #
 
 if [[ -n "$TRACE" ]]; then
@@ -11,10 +12,8 @@ fi
 set -euo pipefail
 IFS=$'\n\t'
 
-AUTO_INST="auto_install.conf"
-RAMDISK=/mnt/ramdisk
-RDSETROOT=/usr/local/bin/rdsetroot
-TRITON_DIST_FILE="site61.tgz"
+INSTALL_SH="install.sh"
+TRITON_DIST_FILE="triton.tgz"
 
 RELEASE=
 MIRROR=
@@ -31,19 +30,19 @@ ISO_FILENAME=
 usage() {
 cat <<EOF
 
-Create a custom OpenBSD ISO with the necessary packages and tooling installed
+Create a custom NetBSD ISO with the necessary packages and tooling installed
 for deploying on SmartOS, Triton and the Joyent Public Cloud.
 
 Usage:
   $0 -r <RELEASE> -m <MIRROR> -p <MIRROR_PATH> -i <ISO> -c <ISO_CHECKSUM> -d <ISO_DIR> -M <ISO_MOUNT> -l <ISO_LAYOUT> -f <ISO_FILENAME>
 
 Example:
-  $0 -r 6.1 -m ftp5.usa.openbsd.org -p /pub/OpenBSD -i install61.iso -c SHA256 -d /data/openbsd-6.1-iso -M /mnt/openbsd-6.1-iso -l /data/openbsd-custom-6.1 -f openbsd-6.1-custom.iso
+  $0 -r 7.1 -m cdn.netbsd.org -p /pub/NetBSD/iso -i NetBSD-7.1-amd64.iso -c SHA512 -d /data/netbsd-7.1-iso -M /mnt/netbsd-7.1-iso -l /data/netbsd-custom-7.1 -f netbsd-6.1-custom.iso
 
 OPTIONS:
-  -r The desired OpenBSD release (e.g., 6.1)
+  -r The desired NetBSD release (e.g., 6.1)
   -m The mirror to use when downloading the release ISO. Do not include protocol (e.g., http://). Assumes http mirror
-  -p The desired mirror path to the ISO (e.g., /pub/OpenBSD)
+  -p The desired mirror path to the ISO (e.g., /pub/NetBSD)
   -i The ISO filename
   -c The name of the checksum file for the ISO
   -d The location to save the dowloaded ISO. Must be absolute path.
@@ -157,8 +156,7 @@ fetch_iso() {
   fi
 
   echo "==> Fetching ${ISO_CHECKSUM}"
-  curl -sS -o ${ISO_DIR}/${ISO_CHECKSUM} https://${MIRROR}${MIRROR_PATH}/${RELEASE}/amd64/${ISO_CHECKSUM}
-  curl -sS -o ${ISO_DIR}/${ISO_CHECKSUM}.sig https://${MIRROR}${MIRROR_PATH}/${RELEASE}/amd64/${ISO_CHECKSUM}.sig
+  curl -sS -o ${ISO_DIR}/${ISO_CHECKSUM} http://${MIRROR}${MIRROR_PATH}/${RELEASE}/${ISO_CHECKSUM}
 
   echo "==> Checking for local copy of $ISO..."
   if [[ -e $ISO_DIR/$ISO ]]; then
@@ -166,22 +164,26 @@ fetch_iso() {
 
     echo "==> Verifying $ISO with ${ISO_CHECKSUM}"
 
-    (cd $ISO_DIR && signify -C -p /etc/signify/openbsd-61-base.pub -x ${ISO_CHECKSUM}.sig ${ISO})
-    if [[ $?  != 0 ]]; then
+    if [[ "$(digest sha512 $ISO_DIR/$ISO | cut -f2 -d= | tr -d '[:space:]')" == "$(grep "($ISO)" $ISO_DIR/${ISO_CHECKSUM} | cut -f2 -d= | tr -d '[:space:]')" ]]; then
+        echo "==> Checksums match."
+    else
+        echo "==> Checksums don't match!"
         exit 1
     fi
 
   else
       echo "==> Local copy not found."
       echo "==> Fetching ISO from $MIRROR..."
-      curl -sS -o ${ISO_DIR}/${ISO} https://${MIRROR}${MIRROR_PATH}/${RELEASE}/amd64/${ISO}
+      curl -sS -o ${ISO_DIR}/${ISO} http://${MIRROR}${MIRROR_PATH}/${RELEASE}/${ISO}
       echo "==> Done!"
       echo "==> ${ISO} saved to $ISO_DIR/"
 
       echo "==> Verifying $ISO with ${ISO_CHECKSUM}"
 
-      (cd $ISO_DIR && signify -C -p /etc/signify/openbsd-61-base.pub -x ${ISO_CHECKSUM}.sig ${ISO})
-      if [[ $?  != 0 ]]; then
+      if [[ "$(digest sha512 $ISO_DIR/$ISO | cut -f2 -d= | tr -d '[:space:]')" == "$(grep "($ISO)" $ISO_DIR/${ISO_CHECKSUM} | cut -f2 -d= | tr -d '[:space:]')" ]]; then
+          echo "==> Checksums match."
+      else
+          echo "==> Checksums don't match!"
           exit 1
       fi
   fi
@@ -209,7 +211,7 @@ create_layout() {
 
   echo "==> Mounting $ISO to $ISO_MOUNT"
   vnconfig vnd0 $ISO_DIR/$ISO
-  mount -t cd9660 /dev/vnd0c $ISO_MOUNT
+  mount_cd9660 /dev/vnd0d $ISO_MOUNT
 
   echo "==> Copying layout from $ISO_MOUNT to $ISO_LAYOUT"
   rsync -aq $ISO_MOUNT/ $ISO_LAYOUT
@@ -219,69 +221,43 @@ create_layout() {
   # Cleanup previous distribution file
   [[ -f $TRITON_DIST_FILE ]] && rm $TRITON_DIST_FILE
 
-  ( cd triton-openbsd-guesttools
+  ( cd triton-netbsd-guesttools
     tar -czpf ../${TRITON_DIST_FILE} ./etc ./lib ./usr
   )
 
-  cp $TRITON_DIST_FILE ${ISO_LAYOUT}/${RELEASE}/amd64/${TRITON_DIST_FILE}
+  cp $TRITON_DIST_FILE ${ISO_LAYOUT}/amd64/binary/sets/${TRITON_DIST_FILE}
 
-  echo "==> Generating shasum for $TRITON_DIST_FILE"
-  SITE_SHASUM=$(cksum -a sha256 $TRITON_DIST_FILE | cut -f1 -d' ')
-  echo "$SITE_SHASUM" >> $ISO_LAYOUT/$RELEASE/amd64/SHA256
+  echo "==> Generating digest for $TRITON_DIST_FILE"
+  ( cd ${ISO_LAYOUT}/amd64/binary/sets
+    digest SHA512 ${TRITON_DIST_FILE} >> SHA512
+    digest MD5 ${TRITON_DIST_FILE} >> MD5
+  )
 
-  echo "==> Copying $AUTO_INST to ramdisk"
+  echo "==> Copying $INSTALL_SH to $ISO_LAYOUT"
+  cp $INSTALL_SH $ISO_LAYOUT/
+  chmod 700 $ISO_LAYOUT/$INSTALL_SH
 
-  if df | grep -q $RAMDISK; then
-    echo "===> Unmounting previous $RAMDISK..."
-    umount $RAMDISK
-    vnconfig -u vnd1
-  fi
+  echo "/${INSTALL_SH}" >> ${ISO_LAYOUT}/etc/rc.local
 
-  if [[ ! -e $RDSETROOT ]]; then
-    if [[ ! -d /usr/src/distrib/common ]]; then
-      (
-        echo "===> Downloading src.tar.gz from $MIRROR..."
-        curl -sS -o /tmp/src.tar.gz https://${MIRROR}${MIRROR_PATH}/${RELEASE}/src.tar.gz
-        echo "===> Installing source tree..."
-        cd /usr/src
-        tar xzf /tmp/src.tar.gz
-        rm -rf /tmp/src.tar.gz
-      )
-    fi
+  echo "==> Get network up automatically in the blank VM"
+  echo "ifconfig_wm0=\"dhcp\"" >> $ISO_LAYOUT/etc/rc.conf
+  echo "ifconfig_wm0=\"dhcp\"" >> $ISO_LAYOUT/etc/rc.conf
 
-    (
-      echo "===> Building $RDSETROOT"
-      cd /usr/src/distrib/common
-      cc -o $RDSETROOT elf32.c elf64.c elfrdsetroot.c
-    )
-  fi
+  echo "==> Set resolvers in the blank VM"
+  echo "nameserver 8.8.8.8" >> $ISO_LAYOUT/etc/resolv.conf
+  echo "nameserver 8.8.4.4" >> $ISO_LAYOUT/etc/resolv.conf
 
-
-
-  echo "===> Creating ramdisk.img"
-  $RDSETROOT -x ${ISO_LAYOUT}/${RELEASE}/amd64/bsd.rd ramdisk.img
-
-  if [[ ! -d $RAMDISK ]]; then
-    echo "===> Creating $RAMDISK ..."
-    mkdir -p $RAMDISK
-  fi
-
-  echo "===> Mounting ramdisk to $RAMDISK"
-  vnconfig vnd1 ramdisk.img
-  mount /dev/vnd1a $RAMDISK
-
-  echo "===> Copying $AUTO_INST to $RAMDISK"
-  cp $AUTO_INST $RAMDISK
-
-  echo "===> Unmounting $RAMDISK"
-  umount $RAMDISK
-  vnconfig -u vnd1
-
-  echo "===> Putting ramdisk.img back to bsd.rd"
-  $RDSETROOT ${ISO_LAYOUT}/${RELEASE}/amd64/bsd.rd ramdisk.img
-
-  echo "==> Cleaing up ramdisk.img"
-  rm -rf ramdisk.img
+  echo "==> Download src/sys for bootcd"
+  ( mkdir -p /usr/src
+    cd /usr/src
+    curl -sS -o sys.tar.gz http://cdn.netbsd.org/pub/NetBSD/NetBSD-release-7/tar_files/src/sys.tar.gz
+    tar -xzf sys.tar.gz -C /usr/
+  )
+  echo "==> Create bootxx_cd9660"
+  ( cd /usr/src/sys/arch/i386/stand/cdboot/
+    make
+    cp bootxx_cd9660 $ISO_LAYOUT/bootxx_cd9660
+  )
 
   echo "==> Unmounting $ISO_MOUNT"
   umount $ISO_MOUNT
@@ -296,7 +272,7 @@ create_newiso() {
   echo "==> Preparing NEW ISO"
   mkisofs -J -R -no-emul-boot \
     -V "$CUSTOM_ISO_TITLE" \
-    -p "Joyent" -b $RELEASE/amd64/cdboot \
+    -p "Joyent" -b bootxx_cd9660\
     -o $ISO_FILENAME $ISO_LAYOUT
   echo "==> Custom ISO now ready: $ISO_FILENAME"
 }
