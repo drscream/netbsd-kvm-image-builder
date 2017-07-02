@@ -70,9 +70,8 @@ chown 0:0 $r/etc/master.passwd
 chmod 600 $r/etc/master.passwd
 chroot $r pwd_mkdb -p /etc/master.passwd
 
-# hostname & network config
+# network config
 cat <<EOF >> $r/etc/rc.conf
-hostname=vagrant
 ifconfig_wm0=dhcp
 EOF
 
@@ -98,5 +97,5 @@ sed -e 's,^[^#].*$,http://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$arch/'$rele
 mv /tmp/repositories.conf $r/usr/pkg/etc/pkgin/repositories.conf
 chroot $r pkgin -y update
 
-# Reboot after we finished
-reboot
+# Shutdown after the installation
+poweroff
